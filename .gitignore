@@ -1,0 +1,16 @@
+# etat local de l'application (mappings, playlists, fenetre)
+controller_sounds_config.json
+window_state.json
+playlists/
+
+# sons (jamais commites : licences des banques de sons)
+*.mp3
+*.wav
+*.ogg
+
+# caches & outils locaux
+__pycache__/
+*.pyc
+.claude/
+*.lnk
+*.code-workspace
