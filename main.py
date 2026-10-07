@@ -1277,7 +1277,17 @@ class ControllerSoundApp:
 
 if __name__ == "__main__":
     state    = load_state()
-    root     = ttk.Window(themename=state.get("theme", "darkly"))
+    try:
+        root = ttk.Window(themename=state.get("theme", "darkly"))
+    except tk.TclError:
+        # theme memorise inconnu (ttkbootstrap mis a jour...) : repli sur darkly
+        state["theme"] = "darkly"
+        if tk._default_root is not None:
+            try:
+                tk._default_root.destroy()
+            except Exception:
+                pass
+        root = ttk.Window(themename="darkly")
     root.attributes("-alpha", state.get("alpha", 0.95))
     playlist = choose_startup_playlist(root, state)
     app      = ControllerSoundApp(root, state, playlist)

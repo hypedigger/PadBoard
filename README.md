@@ -2,6 +2,8 @@
 
 **Turn any gamepad into a soundboard.** Map a sound to every button, D-pad direction, trigger and stick flick of your controller — then play them live.
 
+![PadBoard](docs/screenshot.png)
+
 ## Features
 
 - **Full controller mapping** — face buttons, bumpers, triggers, sticks (press *and* directions), D-pad: every input can fire its own sound.
