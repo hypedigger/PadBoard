@@ -52,6 +52,8 @@ If PadBoard made your streams or game nights more fun:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/hypedigger)
 
+The same link lives in the app under **Options**. PadBoard also shows a small, one-click-dismissible support reminder on the 10th launch and then every 100 launches — tick *"Ne plus me le demander"* (don't ask me again) to turn it off for good. The launch counter is stored locally in `window_state.json` and never leaves your machine.
+
 ## License
 
 [MIT](LICENSE)

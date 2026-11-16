@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import threading
+import webbrowser
 from tkinter import filedialog, messagebox
 import tkinter as tk
 
@@ -40,6 +41,8 @@ WINDOW_CONFIG_FILE = os.path.join(_DIR, "window_state.json")
 PLAYLIST_DIR       = os.path.join(_DIR, "playlists")
 PLAYLIST_EXT       = ".json"
 DEFAULT_GEOMETRY   = "940x720"
+KOFI_URL           = "https://ko-fi.com/hypedigger"
+SUPPORT_POPUP_DELAY_MS = 2500  # invitation Ko-fi : après l'affichage de la fenêtre
 
 DEFAULT_PLAYLIST_LABEL = "\u2014  Configuration par d\u00e9faut  \u2014"
 
@@ -226,6 +229,97 @@ def save_state(state: dict):
             json.dump(state, f, indent=2)
     except OSError:
         pass
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Support (Ko-fi) : lien + invitation occasionnelle
+# ─────────────────────────────────────────────────────────────────────────────
+
+def open_kofi():
+    try:
+        webbrowser.open(KOFI_URL)
+    except Exception:
+        pass
+
+
+def bump_usage_count(state: dict) -> int:
+    """Incr\u00e9mente le compteur de lancements (persist\u00e9 dans window_state.json)."""
+    try:
+        n = int(state.get("usage_count", 0)) + 1
+    except (TypeError, ValueError):
+        n = 1
+    state["usage_count"] = n
+    save_state(state)
+    return n
+
+
+def support_popup_due(state: dict, n_uses: int) -> bool:
+    """Invitation au 10e lancement, puis tous les 100 \u2014 sauf opt-out."""
+    if state.get("support_optout"):
+        return False
+    return n_uses == 10 or (n_uses >= 100 and n_uses % 100 == 0)
+
+
+class SupportDialog(ttk.Toplevel):
+    """Invitation Ko-fi \u2014 fermable d\u2019un clic, avec opt-out d\u00e9finitif.
+
+    Non modale (pas de grab) : l\u2019appli reste utilisable pendant qu\u2019elle est ouverte.
+    """
+
+    def __init__(self, parent, state: dict):
+        super().__init__(parent)
+        self.title(f"\u2615 Vous aimez {APP_NAME} ?")
+        self.resizable(False, False)
+        self._state = state
+        self.protocol("WM_DELETE_WINDOW", self._later)
+        self.bind("<Escape>", lambda _e: self._later())
+
+        pad = ttk.Frame(self, padding=24)
+        pad.pack(fill=BOTH, expand=YES)
+
+        ttk.Label(pad, text=f"\u2615  Vous aimez {APP_NAME} ?",
+                  font=("Segoe UI", 11, "bold")).pack(anchor=W)
+        ttk.Label(pad,
+                  text="Cette application est gratuite et open source, "
+                       "d\u00e9velopp\u00e9e sur le temps libre de son cr\u00e9ateur.\n\n"
+                       "Si elle vous fait gagner du temps, un petit caf\u00e9 sur "
+                       "Ko-fi l\u2019aide \u00e0 continuer \u2014 merci !",
+                  font=("Segoe UI", 9), justify=LEFT, wraplength=380).pack(
+                  anchor=W, pady=(10, 0))
+
+        self._optout_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(pad, text="Ne plus me le demander",
+                        variable=self._optout_var,
+                        bootstyle="secondary-round-toggle").pack(
+                        anchor=W, pady=(16, 16))
+
+        btn = ttk.Frame(pad)
+        btn.pack(fill=X)
+        ttk.Button(btn, text="Plus tard", command=self._later,
+                   bootstyle="secondary-outline", width=12).pack(side=RIGHT)
+        ttk.Button(btn, text="\u2615  Soutenir sur Ko-fi", command=self._support,
+                   bootstyle="info", width=22).pack(side=RIGHT, padx=(0, 8))
+
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        self.geometry("+%d+%d" % (
+            px + (pw - self.winfo_width()) // 2,
+            py + (ph - self.winfo_height()) // 3))
+        self.transient(parent)
+        self.lift()
+
+    def _finish(self):
+        if self._optout_var.get():
+            self._state["support_optout"] = True
+            save_state(self._state)
+        self.destroy()
+
+    def _support(self):
+        self._finish()
+        open_kofi()
+
+    def _later(self):
+        self._finish()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Startup playlist picker
@@ -415,9 +509,15 @@ class OptionsDialog(ttk.Toplevel):
                 font=("Segoe UI", 8), foreground="#ffaa55",
             ).grid(row=9, column=0, columnspan=3, sticky=W, pady=(0, 16))
 
+        # ── Support (Ko-fi) ──────────────────────────────────────────────────
+        ttk.Button(pad, text=f"\u2615  Soutenir {APP_NAME} sur Ko-fi",
+                   command=open_kofi, bootstyle="info-link",
+                   padding=(0, 2)).grid(
+            row=10, column=0, columnspan=3, sticky=W, pady=(0, 16))
+
         # ── Buttons ──────────────────────────────────────────────────────────
         btn = ttk.Frame(pad)
-        btn.grid(row=10, column=0, columnspan=3, sticky=E)
+        btn.grid(row=11, column=0, columnspan=3, sticky=E)
         ttk.Button(btn, text="Annuler", command=self._cancel,
                    bootstyle="secondary-outline", width=12).pack(side=LEFT, padx=(0,8))
         ttk.Button(btn, text="Appliquer", command=self._apply,
@@ -515,6 +615,18 @@ class ControllerSoundApp:
         self.thread = threading.Thread(target=self.poll_controller, daemon=True)
         self.thread.start()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # compteur de lancements + invitation Ko-fi (jamais en cours d'usage)
+        self._support_after = None
+        if support_popup_due(state, bump_usage_count(state)):
+            self._support_after = root.after(
+                SUPPORT_POPUP_DELAY_MS, self._show_support_popup)
+
+    def _show_support_popup(self):
+        self._support_after = None
+        if not self.running or self.root.grab_current() is not None:
+            return          # dialogue modal déjà ouvert : on n'insiste pas
+        SupportDialog(self.root, self._state)
 
     # ── Treeview style ────────────────────────────────────────────────────────
 
@@ -1269,6 +1381,12 @@ class ControllerSoundApp:
             except Exception:
                 pass
             self._rescan_after = None
+        if self._support_after is not None:
+            try:
+                self.root.after_cancel(self._support_after)
+            except Exception:
+                pass
+            self._support_after = None
         pygame.quit()
         self.root.destroy()
 
